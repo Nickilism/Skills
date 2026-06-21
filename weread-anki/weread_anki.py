@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """WeRead → Anki helper: fetch highlights, parse text, merge CSV batches."""
 
-import json, os, sys, subprocess, re, glob
+import json, os, sys, subprocess, re, glob, base64
 
 API_URL = "https://i.weread.qq.com/api/agent/gateway"
 SKILL_VERSION = "1.0.3"
@@ -166,6 +166,64 @@ def merge_csv_batches(batch_dir, output_path):
                         count += 1
     return count
 
+def upload_to_github(file_path, repo="Nickilism/Skills", base_dir="weread-anki/Anki"):
+    """Upload a CSV file to GitHub using the Contents API."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        return {"ok": False, "error": "GITHUB_TOKEN not set"}
+    
+    filename = os.path.basename(file_path)
+    remote_path = f"{base_dir}/{filename}"
+    api_url = f"https://api.github.com/repos/{repo}/contents/{remote_path}"
+    
+    with open(file_path, "rb") as f:
+        content_b64 = base64.b64encode(f.read()).decode("utf-8")
+    
+    # Check if file exists (get SHA for update)
+    sha = None
+    result = subprocess.run(
+        ["curl", "-s", "-w", "\n%{http_code}", api_url,
+         "-H", f"Authorization: token {token}",
+         "-H", "Accept: application/vnd.github.v3+json"],
+        capture_output=True, text=True
+    )
+    lines = result.stdout.strip().split("\n")
+    status_code = int(lines[-1]) if lines else 0
+    if status_code == 200:
+        try:
+            sha = json.loads("\n".join(lines[:-1])).get("sha")
+        except json.JSONDecodeError:
+            pass
+    
+    # Create or update file
+    payload = {
+        "message": f"Add Anki cards: {filename}",
+        "content": content_b64,
+    }
+    if sha:
+        payload["sha"] = sha
+    
+    result = subprocess.run(
+        ["curl", "-s", "-w", "\n%{http_code}", "-X", "PUT", api_url,
+         "-H", f"Authorization: token {token}",
+         "-H", "Content-Type: application/json",
+         "-H", "Accept: application/vnd.github.v3+json",
+         "-d", json.dumps(payload)],
+        capture_output=True, text=True
+    )
+    lines = result.stdout.strip().split("\n")
+    status_code = int(lines[-1]) if lines else 0
+    body = "\n".join(lines[:-1])
+    
+    if status_code in (200, 201):
+        try:
+            html_url = json.loads(body).get("content", {}).get("html_url", "")
+        except json.JSONDecodeError:
+            html_url = f"https://github.com/{repo}/blob/main/{remote_path}"
+        return {"ok": True, "url": html_url, "path": remote_path}
+    else:
+        return {"ok": False, "status": status_code, "error": body[:200]}
+
 # --- CLI interface ---
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "help"
@@ -229,6 +287,20 @@ if __name__ == "__main__":
         count = merge_csv_batches("/tmp/anki_batches", output)
         print(json.dumps({"output": output, "cards": count}, ensure_ascii=False))
     
+    elif cmd == "upload":
+        import glob as g
+        title_slug = sys.argv[2] if len(sys.argv) > 2 else "weread"
+        # Find the latest CSV matching the title slug
+        pattern = f"/var/minis/attachments/anki/{title_slug}_*.csv"
+        files = sorted(g.glob(pattern))
+        if not files:
+            print(json.dumps({"ok": False, "error": f"No CSV found matching {pattern}"}, ensure_ascii=False))
+            sys.exit(1)
+        latest = files[-1]
+        result = upload_to_github(latest)
+        result["local_file"] = latest
+        print(json.dumps(result, ensure_ascii=False))
+    
     else:
         print("Usage: python3 weread_anki.py <command> [args]")
         print("  search-notebooks <keyword> — Search user's notebook list (preferred)")
@@ -237,3 +309,4 @@ if __name__ == "__main__":
         print("  parse [file]         — Parse pasted text (stdin or file)")
         print("  batch [size]         — Split into batches (default 40)")
         print("  merge [title_slug]   — Merge batch CSVs into final output")
+        print("  upload [title_slug]  — Upload latest CSV to GitHub")
