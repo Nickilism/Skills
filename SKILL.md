@@ -1,6 +1,6 @@
 ---
 name: weread-anki
-description: 微信读书划线转 Anki 卡片。当用户说"把划线做成Anki卡片"、"微信读书笔记转Anki"、"导出Anki"、"帮我制卡"、"划线复习卡片"时触发。支持两种输入：自动拉取微信读书划线（需 WEREAD_API_KEY），或用户手动粘贴划线文本。
+description: 微信读书划线转 Anki 卡片，自动上传 CSV 到 GitHub 仓库。当用户说"把划线做成Anki卡片"、"微信读书笔记转Anki"、"导出Anki"、"帮我制卡"、"划线复习卡片"时触发。支持两种输入：自动拉取微信读书划线（需 WEREAD_API_KEY），或用户手动粘贴划线文本。生成的 CSV 自动推送到 Nickilism/Skills 仓库。
 ---
 
 # WeRead → Anki 卡片生成器
@@ -17,6 +17,7 @@ description: 微信读书划线转 Anki 卡片。当用户说"把划线做成Ank
 | `WEREAD_API_KEY` 未设置 | 退化 | 自动切换手动模式，提示用户粘贴划线文本 |
 | `/var/minis/skills/weread/notes.md` 不存在 | 降级 | Step 2A 使用本文档中的 curl 命令（已内联） |
 | `minis-model-use` 不可用 | 中止 | 告知用户无法调用模型制卡，建议手动编辑 |
+| `GITHUB_TOKEN` 未设置 | 降级 | Step 6 上传跳过，仅本地输出 CSV |
 
 ## 工作流
 
@@ -193,6 +194,33 @@ python3 /var/minis/skills/weread-anki/weread_anki.py merge 书名slug
    - 若有警告（失败批次），一并列出
    - 提供 CSV 下载链接：`[书名_时间.csv](minis://attachments/anki/书名_时间.csv)`
    - 提供 Anki 导入说明：文件 → 导入 → 选择文件 → 分隔符选自定义 "|"
+
+### Step 6：上传 CSV 到 GitHub
+
+将生成的 CSV 文件推送到 `Nickilism/Skills` 仓库的 `weread-anki/Anki/` 目录。
+
+1. 使用脚本上传：
+```bash
+python3 /var/minis/skills/weread-anki/weread_anki.py upload "书名slug"
+# 读取 GITHUB_TOKEN 环境变量
+# 上传 /var/minis/attachments/anki/书名slug_*.csv 到 GitHub
+```
+
+2. 脚本内部逻辑（用 GitHub Contents API）：
+   - 读取本地 CSV 文件内容，base64 编码
+   - PUT 到 `https://api.github.com/repos/Nickilism/Skills/contents/weread-anki/Anki/<filename>.csv`
+   - 如果文件已存在（409/422），先 GET 获取 SHA 再用 PUT 更新
+
+3. 输出上传结果：
+   - 成功：告知用户 GitHub 文件链接
+   - 失败：仅警告，不影响本地 CSV 的可用性
+
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|----------|----------|------------|
+| `GITHUB_TOKEN` 未设置 | 跳过上传，仅告知用户 | CSV 仍然本地可用 |
+| GitHub API 返回 401/403 | 检查 token 权限（需 `repo` scope） | 跳过上传，告知用户 token 权限不足 |
+| GitHub API 返回 409（文件已存在） | 先 GET 获取文件 SHA，再 PUT 更新 | 跳过，告知用户上传冲突 |
+| 网络错误/超时 | 重试 1 次 | 跳过上传，告知用户网络问题 |
 
 | 触发条件 | 一线修复 | 仍失败兜底 |
 |----------|----------|------------|
