@@ -137,12 +137,7 @@ def batch_lines(lines, batch_size=40):
 
 def format_batch_input(title, author, book_id, batch_lines):
     """Format a batch of highlights into the model input string."""
-    if book_id.startswith("CB_"):
-        weread_url = f"weread://reading?bId={book_id}"
-    elif book_id:
-        weread_url = f"https://weread.qq.com/web/bookDetail/{book_id}"
-    else:
-        weread_url = ""
+    weread_url = f"weread://reading?bId={book_id}" if book_id else ""
     header = f"书名：{title}\n作者：{author}"
     if weread_url:
         header += f"\n书籍链接：{weread_url}"
