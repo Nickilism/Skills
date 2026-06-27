@@ -27,59 +27,25 @@ description: 从 Nickilism 的 Notion "文章收藏" 数据库中随机推荐一
 
 ---
 
-<!-- 前置依赖检查已移除：当前流程仅需 `notion-cli search`，不依赖 `notion-fetch.py`。保留 `notion-fetch.py` 文件供将来需要 fetch 时使用。 -->
-
-
----
-
 ## 执行步骤
 
 ### Step 1 — 拉取全部文章，随机选一篇
 
 调用一次 API 获取数据库全部文章，在本地解析标签分布、随机选标签、再从该标签下随机挑一篇（不选第一条）。无需第二次 API 调用。
 
+**两步法**（避免 BusyBox ash 管道吞 stdin 的 bug）：
+
 ```bash
+# 1. 存文件
 notion-cli search \
   --database "a60f4ca1-08a3-4d31-8a14-365ef59e4c71" \
-  --page-size 100 2>/dev/null \
-  | python3 -c "
-import json, sys, random
+  --page-size 100 2>/dev/null > /tmp/articles.json
 
-d = json.load(sys.stdin)
-results = d['results']
+# 2. 用独立脚本处理（与 SKILL.md 同级）
+python3 ./pick_random.py < /tmp/articles.json
+```
 
-# 按标签建立索引
-tag_map = {}
-for r in results:
-    for t in r.get('tags', []):
-        tag_map.setdefault(t, []).append(r)
-
-# 随机选一个标签
-tags = sorted(tag_map.keys())
-chosen = random.choice(tags)
-articles = tag_map[chosen]
-
-# 随机选一篇文章（跳过第一条）
-if len(articles) == 1:
-    pick = articles[0]
-else:
-    pick = random.choice(articles[1:])
-
-# 输出结构化结果（供后续步骤解析，NOTES 用 base64 编码避免换行符截断）
-import base64
-notes = pick.get("fleeting_notes", "") or ""
-notes_b64 = base64.b64encode(notes.encode()).decode()
-print(f'TOTAL:{d[\"total\"]}')
-print(f'TAGS:{json.dumps(tags, ensure_ascii=False)}')
-print(f'CHOSEN_TAG:{chosen}')
-print(f'ID:{pick[\"id\"]}')
-print(f'URL:{pick["url"]}')
-print(f'TITLE:{pick["title"]}')
-print(f'NOTES_B64:{notes_b64}')
-print(f'ORIG:{pick.get("original_url", "") or ""}')
-print(f'SOURCE:{pick.get("source", "") or ""}')
-print(f'TIME:{pick.get("created_time", "") or ""}')
-"
+> `./pick_random.py` 是相对于本 skill 目录的路径。代理执行前应将工作目录设为该 skill 目录，或根据 skill name 解析完整路径。
 ```
 
 解析输出中的 `ID:`、`URL:`、`TITLE:`、`NOTES_B64:` 等行。`NOTES_B64` 是 base64 编码，用 `echo "$NOTES_B64" | base64 -d` 解码得到完整原文。
@@ -117,18 +83,6 @@ print(f'TIME:{pick.get("created_time", "") or ""}')
 🔗 [阅读原文](original_url)
 ```
 
-**排版规则：**
-- 第一行 → `📖 **今日随机推荐**`
-- 第二行 → 标题：`[**标题**](Notion页面URL)`
-- 之后逐行列出元信息（缺则跳过）：
-  - `🏷️ 标签：xxx`
-  - `📖 来源：xxx`
-  - `📅 收藏于 YYYY年MM月DD日`
-  - `📝 摘要：xxx`（取自 `fleeting_notes`；若无则跳过此行，不拉正文）
-- 最后一行 → `🔗 [阅读原文](original_url)`（若无原文链接则省略）
-
-注意：标题已含 Notion 链接，底部不再重复。保持简洁，不要多余解释或客套话。
-
 ---
 
 ## 异常处理
@@ -142,15 +96,6 @@ print(f'TIME:{pick.get("created_time", "") or ""}')
 | Step 1 拉取 `total=0` | 检查 Notion 数据库是否为空 | 输出"文章收藏数据库为空"，中止 |
 | `fleeting_notes` 为空 | 跳过摘要行，正常输出其他字段 | — |
 | 用户不喜欢推荐的文章 | 回 Step 1 重新选一篇 | — |
-
-### 🔴 CHECKPOINT · 输出前
-
-生成推荐文案后暂停，确认：
-1. 文章与用户兴趣相关？
-2. 摘要来自自己的笔记（`fleeting_notes`）而非 AI 概括？
-3. 双链接（Notion + 原文）可用？
-
-> 全部通过 → 输出。第 1 条不通过 → 回 Step 1 重选。第 2/3 条不通过 → 仅输出已有字段。
 
 ---
 
