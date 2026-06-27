@@ -27,8 +27,15 @@ python3 ./pick_random.py < /tmp/articles.json
 
 ```
 📖 **今日随机推荐** [**{TITLE}**]({URL})
-🏷️ {tags} 📖 {SOURCE} 📅 {TIME}
-📝 {NOTES_B64 解码内容；为空则省略}
+
+🏷️**标签** {tags} 
+
+📚**来源** {SOURCE} 
+
+📅**收藏时间** {TIME}
+
+📝**摘要** {NOTES_B64 解码内容；为空则省略}
+
 🔗 [阅读原文]({ORIG})
 ```
 
