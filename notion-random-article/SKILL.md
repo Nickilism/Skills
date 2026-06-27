@@ -11,7 +11,7 @@ description: 从 Nickilism 的 Notion "文章收藏" 数据库中随机推荐一
 
 - **Database URL**: `https://app.notion.com/p/a60f4ca108a34d318a14365ef59e4c71`
 - **Database ID**: `a60f4ca1-08a3-4d31-8a14-365ef59e4c71`
-- **CLI 工具**: `notion-cli search` / `notion-cli fetch`（无需 MCP，通过 REST API 直连）
+- **CLI 工具**: `notion-cli search`（无需 MCP，通过 REST API 直连）
 - **环境变量**: `NOTION_TOKEN`（已设置且有效）
 
 数据库字段（CLI 输出中的 key 名）：
@@ -27,80 +27,73 @@ description: 从 Nickilism 的 Notion "文章收藏" 数据库中随机推荐一
 
 ---
 
+<!-- 前置依赖检查已移除：当前流程仅需 `notion-cli search`，不依赖 `notion-fetch.py`。保留 `notion-fetch.py` 文件供将来需要 fetch 时使用。 -->
+
+
+---
+
 ## 执行步骤
 
-### Step 1 — 随机选取搜索词
+### Step 1 — 拉取全部文章，随机选一篇
 
-从下方列表中**随机**选取一个词作为搜索词。选取方式：用 Python 的 `random.choice()` 从列表中随机选一个（或人工轮换，目标是每次尽量不重复）：
-
-```
-["思考", "成长", "技术", "哲学", "人生", "阅读", "写作", "社会", "历史",
- "科学", "文化", "语言", "商业", "设计", "心理", "政治", "影视", "情感",
- "进化", "观点", "理性", "认知", "效率", "创作", "生活", "知识"]
-```
-
-> 💡 如果用户指定了主题（如"给我一篇哲学相关的"），直接用该词。
-
-### Step 2 — 搜索数据库
-
-运行以下命令搜索文章收藏数据库：
+调用一次 API 获取数据库全部文章，在本地解析标签分布、随机选标签、再从该标签下随机挑一篇（不选第一条）。无需第二次 API 调用。
 
 ```bash
 notion-cli search \
-  --query "<Step 1 选出的词>" \
   --database "a60f4ca1-08a3-4d31-8a14-365ef59e4c71" \
-  --page-size 10
+  --page-size 100 2>/dev/null \
+  | python3 -c "
+import json, sys, random
+
+d = json.load(sys.stdin)
+results = d['results']
+
+# 按标签建立索引
+tag_map = {}
+for r in results:
+    for t in r.get('tags', []):
+        tag_map.setdefault(t, []).append(r)
+
+# 随机选一个标签
+tags = sorted(tag_map.keys())
+chosen = random.choice(tags)
+articles = tag_map[chosen]
+
+# 随机选一篇文章（跳过第一条）
+if len(articles) == 1:
+    pick = articles[0]
+else:
+    pick = random.choice(articles[1:])
+
+# 输出结构化结果（供后续步骤解析，NOTES 用 base64 编码避免换行符截断）
+import base64
+notes = pick.get("fleeting_notes", "") or ""
+notes_b64 = base64.b64encode(notes.encode()).decode()
+print(f'TOTAL:{d[\"total\"]}')
+print(f'TAGS:{json.dumps(tags, ensure_ascii=False)}')
+print(f'CHOSEN_TAG:{chosen}')
+print(f'ID:{pick[\"id\"]}')
+print(f'URL:{pick["url"]}')
+print(f'TITLE:{pick["title"]}')
+print(f'NOTES_B64:{notes_b64}')
+print(f'ORIG:{pick.get("original_url", "") or ""}')
+print(f'SOURCE:{pick.get("source", "") or ""}')
+print(f'TIME:{pick.get("created_time", "") or ""}')
+"
 ```
 
-若返回 `"total": 0`，从列表中另选一个词重试，**最多重试 2 次**。若 3 次都无结果，输出错误信息并建议用户检查数据库或更换关键词。
+解析输出中的 `ID:`、`URL:`、`TITLE:`、`NOTES_B64:` 等行。`NOTES_B64` 是 base64 编码，用 `echo "$NOTES_B64" | base64 -d` 解码得到完整原文。
 
-输出格式示例（JSON）：
-```json
-{
-  "total": 5,
-  "has_more": false,
-  "results": [
-    {
-      "id": "7bb443a4-...",
-      "url": "https://app.notion.com/p/...",
-      "title": "文章标题",
-      "fleeting_notes": "笔记内容（可能为空）",
-      "original_url": "https://...",
-      "tags": ["标签1", "标签2"],
-      "source": null,
-      "created_time": "2023-11-17T07:06:00.000Z"
-    },
-    ...
-  ]
-}
-```
+> 💡 如果用户指定了主题（如"给我一篇哲学相关的"），用该词作为标签直接过滤 `tag_map`，跳过随机选标签。
 
-### Step 3 — 随机挑选一篇
+### Step 2 — 生成输出
 
-从返回结果中**不选第一条**——选第 2、3 或更靠后的一条（增加意外感）。如果只有 1 条结果，直接用它。
+从 Step 1 的解析结果中提取字段：
 
-记录该文章的：
-- `id`（页面 ID）
-- `url`（Notion 页面链接）
-- `title`（标题）
+- 如果 `NOTES_B64` 解码后不为空 → 直接用作摘要（原汁原味，这是你自己的笔记）
+- 如果 `NOTES_B64` 为空 → 不显示摘要，**跳过 fetch，不拉正文**（节省 API 调用和 token 消耗）
 
-### Step 4 — 获取完整页面内容
-
-运行以下命令获取页面详情：
-
-```bash
-notion-cli fetch --page "<Step 3 的 id>"
-```
-
-输出包含所有属性 + 正文 `body_text`（Markdown 格式文本）。
-
-### Step 5 — 生成摘要
-
-从 fetch 输出中提取字段。按优先级选择摘要来源：
-
-1. **`fleeting_notes` 不为空** → 直接用作摘要（原汁原味，这是你自己的笔记）
-2. **`body_text` 有内容** → 用 2-3 句话概括文章核心论点（中文）
-3. **两者都为空** → 写"（暂无笔记）"，鼓励用户点开原文
+然后按下方输出格式拼接文案。
 
 ---
 
@@ -114,8 +107,11 @@ notion-cli fetch --page "<Step 3 的 id>"
 [**文章标题**](Notion页面URL)
 
 🏷️ 标签：标签1, 标签2
+
 📖 来源：xxx
+
 📅 收藏于 YYYY年MM月DD日
+
 📝 摘要：摘要内容
 
 🔗 [阅读原文](original_url)
@@ -128,7 +124,7 @@ notion-cli fetch --page "<Step 3 的 id>"
   - `🏷️ 标签：xxx`
   - `📖 来源：xxx`
   - `📅 收藏于 YYYY年MM月DD日`
-  - `📝 摘要：xxx`（取自 `fleeting_notes`，若无则用 `body_text` 概括，无内容则写"（暂无笔记）"）
+  - `📝 摘要：xxx`（取自 `fleeting_notes`；若无则跳过此行，不拉正文）
 - 最后一行 → `🔗 [阅读原文](original_url)`（若无原文链接则省略）
 
 注意：标题已含 Notion 链接，底部不再重复。保持简洁，不要多余解释或客套话。
@@ -143,10 +139,9 @@ notion-cli fetch --page "<Step 3 的 id>"
 |------|---------|-----------|
 | `search` 返回 401 | 检查 `$NOTION_TOKEN` 是否有效 | 输出"NOTION_TOKEN 失效，请在 Settings → Environments 重新设置"，中止 |
 | `search` 超时 | 等待 5 秒重试 1 次 | 输出"Notion API 暂时不可用"，中止 |
-| `search` total=0（连续 3 次） | 换词重试（最多 2 次） | 输出"暂无匹配文章"，中止 |
-| `fetch` 报错 | 重试 1 次 | 降级为仅用 search 数据输出，摘要处标注"（正文获取失败）" |
-| `fleeting_notes` + `body_text` 均为空 | 输出"（暂无笔记）"，保留元信息 | — |
-| 用户不喜欢推荐的文章 | 重头再选一篇（换搜索词） | — |
+| Step 1 拉取 `total=0` | 检查 Notion 数据库是否为空 | 输出"文章收藏数据库为空"，中止 |
+| `fleeting_notes` 为空 | 跳过摘要行，正常输出其他字段 | — |
+| 用户不喜欢推荐的文章 | 回 Step 1 重新选一篇 | — |
 
 ### 🔴 CHECKPOINT · 输出前
 
