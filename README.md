@@ -7,6 +7,7 @@
 | Skill | 平台 | 说明 | 依赖 |
 |-------|------|------|------|
 | [weread-anki](./weread-anki/) | Minis | 微信读书划线 → Anki 闪卡 | `weread` skill（API 模式需 `WEREAD_API_KEY`） |
+| [notion-random-article](./notion-random-article/) | Minis | 从 Notion 文章收藏库随机推荐一篇值得重读的文章 | `NOTION_TOKEN` 环境变量 |
 
 ## 许可
 
