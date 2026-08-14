@@ -11,6 +11,7 @@
 | [book-deep-read](./book-deep-read/) | 书籍深度阅读辅助工具 | 学习工具 | — |
 | [kid-English-passage](./kid-English-passage/) | 儿童英文段落生成与学习 | 教育工具 | — |
 | [math-lament](./math-lament/) | 数学问题解答与讲解 | 教育工具 | — |
+| [lexile-test](./lexile-test/) | 生成分级阅读理解选择题测验，检测孩子对英文书籍的理解程度并给出蓝思值参考 | 教育工具 | — |
 
 ## 项目特色
 
