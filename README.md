@@ -9,6 +9,7 @@
 | [weread-anki](./weread-anki/) | 微信读书划线 → Anki 闪卡 | 数据转换 | `weread` skill（API 模式需 `WEREAD_API_KEY`） |
 | [notion-random-article](./notion-random-article/) | 从 Notion 文章收藏库随机推荐一篇值得重读的文章 | 推荐系统 | `NOTION_TOKEN` 环境变量 |
 | [book-deep-read](./book-deep-read/) | 书籍深度阅读辅助工具 | 学习工具 | — |
+| [movie-deep-read](./movie-deep-read/) | 电影深度解读报告（剧作主题 + 幕后制作），附一对一问答 | 学习工具 | — |
 | [kid-English-passage](./kid-English-passage/) | 儿童英文段落生成与学习 | 教育工具 | — |
 | [math-lament](./math-lament/) | 数学问题解答与讲解 | 教育工具 | — |
 | [lexile-test](./lexile-test/) | 生成分级阅读理解选择题测验，检测孩子对英文书籍的理解程度并给出蓝思值参考 | 教育工具 | — |
