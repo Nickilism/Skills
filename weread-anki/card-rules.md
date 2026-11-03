@@ -39,19 +39,22 @@
 
 ## 输出格式
 
+- UTF-8 的 `.csv`，字段用 `|` 分隔
+- 字段顺序：Question | Answer | Writer | Book | NotionURL | OriginalQuote | Tags
+- 文件头：
+```
+#separator:Pipe
+#html:true
+#columns:Question|Answer|Writer|Book|NotionURL|OriginalQuote|Tags
+#tags column:7
+```
+- 不设 `#notetype`，导入时你自己选
+- Writer 填作者，Book 填书名，NotionURL 填微信读书深度链接，统一格式 `weread://reading?bId=<bookId>`
+- OriginalQuote：原文逐字转录，以 `◆ ` 开头，对话气泡放括号里，换行用 `<br>`
+- Tags：`书名::章节`，不知道章节时用概念名
+- 交付前用脚本校验：每行 7 个字段，字段内不能有 `|`、换行或双引号
+
 严格按 pipe 符号 `|` 分隔的 CSV 格式输出，**不含表头**，每张卡片一行。
-
-### 字段定义
-
-| 序号 | 字段 | 说明 |
-|------|------|------|
-| 1 | 问题（Question） | 卡片正面，考查内容 |
-| 2 | 回答（Answer） | 卡片背面，核心答案 |
-| 3 | 作者 | 书籍作者；无明确信息填"未知" |
-| 4 | 书名 | 不含书名号《》 |
-| 5 | 书籍链接 | 微信读书深度链接，统一格式 `weread://reading?bId=<bookId>` |
-| 6 | 原文摘录 | 完整的 ◆ 摘录原文（不拆分） |
-| 7 | 标签 | 格式 `书名::章节名`（不含空格、不含 ◆）；无章节信息则只填书名 |
 
 ### 转义规则
 
