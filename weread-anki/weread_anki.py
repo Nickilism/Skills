@@ -4,7 +4,7 @@
 import json, os, sys, subprocess, re, glob, base64
 
 API_URL = "https://i.weread.qq.com/api/agent/gateway"
-SKILL_VERSION = "1.0.3"
+SKILL_VERSION = "1.0.4"
 
 def api_call(api_name, **params):
     body = {"api_name": api_name, "skill_version": SKILL_VERSION, **params}
@@ -145,21 +145,57 @@ def format_batch_input(title, author, book_id, batch_lines):
     body = "\n".join(batch_lines)
     return header + body
 
+ANKI_CSV_HEADER = (
+    "#separator:Pipe\n"
+    "#html:true\n"
+    "#columns:Question|Answer|Writer|Book|NotionURL|OriginalQuote|Tags\n"
+    "#tags column:7\n"
+)
+ANKI_FIELD_COUNT = 7
+
+def _fix_ascii_quotes(field):
+    """Replace half-width double quotes with Chinese quotes, alternating open/close."""
+    out, opening = [], True
+    for ch in field:
+        if ch == '"':
+            out.append("\u201c" if opening else "\u201d")
+            opening = not opening
+        else:
+            out.append(ch)
+    return "".join(out)
+
 def merge_csv_batches(batch_dir, output_path):
-    """Merge all batch CSV files into one, skipping empty lines."""
+    """Merge batch CSVs into one Anki-importable file.
+
+    Writes the Anki file header first, then every data row. Skips empty
+    lines, '#' header lines and Markdown fences a model may have emitted,
+    drops rows that do not have exactly 7 pipe-separated fields, and turns
+    half-width double quotes into Chinese quotes.
+    Returns (cards_written, skipped_rows).
+    """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    pattern = os.path.join(batch_dir, "anki_batch_*.csv")
-    files = sorted(glob.glob(pattern))
+    files = sorted(set(
+        glob.glob(os.path.join(batch_dir, "anki_batch_*.csv"))
+        + glob.glob(os.path.join(os.path.dirname(batch_dir.rstrip("/")) or ".", "anki_batch_*.csv"))
+    ))
     count = 0
+    skipped = []
     with open(output_path, "w", encoding="utf-8") as out:
+        out.write(ANKI_CSV_HEADER)
         for f in files:
             with open(f, "r", encoding="utf-8") as inp:
-                for line in inp:
+                for n, line in enumerate(inp, 1):
                     line = line.strip()
-                    if line:
-                        out.write(line + "\n")
-                        count += 1
-    return count
+                    if not line or line.startswith("#") or line.startswith("```"):
+                        continue
+                    if line.count("|") != ANKI_FIELD_COUNT - 1:
+                        skipped.append(f"{os.path.basename(f)}:{n}")
+                        continue
+                    if '"' in line:
+                        line = "|".join(_fix_ascii_quotes(x) for x in line.split("|"))
+                    out.write(line + "\n")
+                    count += 1
+    return count, skipped
 
 def upload_to_github(file_path, repo="Nickilism/Skills", base_dir="weread-anki/Anki"):
     """Upload a CSV file to GitHub using the Contents API."""
@@ -279,8 +315,8 @@ if __name__ == "__main__":
         title_slug = sys.argv[2] if len(sys.argv) > 2 else "weread"
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
         output = f"/var/minis/attachments/anki/{title_slug}_{ts}.csv"
-        count = merge_csv_batches("/tmp/anki_batches", output)
-        print(json.dumps({"output": output, "cards": count}, ensure_ascii=False))
+        count, skipped = merge_csv_batches("/tmp/anki_batches", output)
+        print(json.dumps({"output": output, "cards": count, "skipped": skipped}, ensure_ascii=False))
     
     elif cmd == "upload":
         import glob as g
