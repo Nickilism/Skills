@@ -131,9 +131,35 @@ def parse_pasted_text(text):
     
     return title, author, lines
 
+def _chapter_of(line):
+    """Return the [chapter] prefix of a ◆ line, or '' if none."""
+    body = line[1:].lstrip() if line.startswith("◆") else line
+    if body.startswith("[") and "]" in body:
+        return body[1:body.index("]")]
+    return ""
+
 def batch_lines(lines, batch_size=40):
-    """Split lines into batches."""
-    return [lines[i:i+batch_size] for i in range(0, len(lines), batch_size)]
+    """Split lines into batches without cutting a chapter in two when possible,
+    so highlights on one topic stay in the same model call and can be merged."""
+    groups = []
+    for line in lines:
+        ch = _chapter_of(line)
+        if groups and groups[-1][0] == ch:
+            groups[-1][1].append(line)
+        else:
+            groups.append((ch, [line]))
+    batches, cur = [], []
+    for _, g in groups:
+        if cur and len(cur) + len(g) > batch_size:
+            batches.append(cur)
+            cur = []
+        while len(g) > batch_size:  # a single chapter larger than one batch
+            batches.append(g[:batch_size])
+            g = g[batch_size:]
+        cur.extend(g)
+    if cur:
+        batches.append(cur)
+    return batches
 
 def format_batch_input(title, author, book_id, batch_lines):
     """Format a batch of highlights into the model input string."""
